@@ -5,6 +5,8 @@ import os
 import xlrd
 from xlrd import xldate_as_tuple
 import datetime
+import re
+from docx import Document
 
 class WPSExcelTool:
     def __init__(self, root):
@@ -21,6 +23,7 @@ class WPSExcelTool:
         self.file_path = tk.StringVar()
         self.sheet_name = tk.StringVar()
         self.output_path = tk.StringVar()
+        self.mapping_file_path = tk.StringVar()  # IP设备映射表文件路径
         
         # 创建界面
         self.create_widgets()
@@ -102,6 +105,15 @@ class WPSExcelTool:
         ttk.Entry(output_frame, textvariable=self.output_path).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         ttk.Button(output_frame, text="浏览", command=self.browse_output).pack(side=tk.LEFT, padx=5)
         
+        # IP设备映射表选择
+        mapping_frame = ttk.Frame(self.root)
+        mapping_frame.pack(pady=5, padx=10, fill=tk.X)
+        
+        ttk.Label(mapping_frame, text="IP设备映射表:").pack(side=tk.LEFT, padx=5, anchor=tk.CENTER)
+        mapping_entry = ttk.Entry(mapping_frame, textvariable=self.mapping_file_path)
+        mapping_entry.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        ttk.Button(mapping_frame, text="浏览", command=self.browse_mapping_file).pack(side=tk.LEFT, padx=5)
+        
         # 处理按钮
         button_frame = ttk.Frame(self.root)
         button_frame.pack(pady=20)
@@ -138,6 +150,15 @@ class WPSExcelTool:
             self.output_path.set(output_path)
             self.log(f"选择输出路径: {output_path}")
     
+    def browse_mapping_file(self):
+        """选择IP设备映射表文件"""
+        mapping_file = filedialog.askopenfilename(
+            filetypes=[("Word Files", "*.docx")]
+        )
+        if mapping_file:
+            self.mapping_file_path.set(mapping_file)
+            self.log(f"选择IP设备映射表: {mapping_file}")
+    
     def get_sheets(self, file_path):
         """获取Excel文件的工作表列表，支持xlsx和xls格式"""
         ext = os.path.splitext(file_path)[1].lower()
@@ -159,6 +180,72 @@ class WPSExcelTool:
             return sheets
         except Exception as e:
             raise Exception(f"读取工作表失败: {str(e)}")
+    
+    def read_ip_device_mapping(self, docx_path):
+        """读取docx文件中的IP设备名称映射表，支持段落和表格格式"""
+        try:
+            self.log(f"开始读取IP设备映射表: {docx_path}")
+            
+            # 打开docx文件
+            doc = Document(docx_path)
+            
+            # 初始化映射字典
+            ip_device_map = {}
+            
+            # 遍历所有段落
+            self.log("=== 遍历段落 ===")
+            for para in doc.paragraphs:
+                text = para.text.strip()
+                if text:
+                    # 尝试匹配IP和设备名称的格式
+                    patterns = [
+                        r'(\d+\.\d+\.\d+\.\d+)\s+(.*)',  # IP 设备名称
+                        r'(\d+\.\d+\.\d+\.\d+)-(.*)',   # IP-设备名称
+                        r'(\d+\.\d+\.\d+\.\d+):(.*)',   # IP:设备名称
+                        r'(\d+\.\d+\.\d+\.\d+)\s*->\s*(.*)'  # IP -> 设备名称
+                    ]
+                    
+                    for pattern in patterns:
+                        match = re.match(pattern, text)
+                        if match:
+                            ip = match.group(1)
+                            device = match.group(2).strip()
+                            ip_device_map[ip] = device
+                            self.log(f"  匹配到: IP={ip}, 设备名称={device}")
+                            break
+            
+            # 遍历所有表格
+            self.log("\n=== 遍历表格 ===")
+            for table_idx, table in enumerate(doc.tables):
+                self.log(f"表格 {table_idx+1}，共 {len(table.rows)} 行，{len(table.columns)} 列")
+                
+                # 遍历表格的每一行
+                for row_idx, row in enumerate(table.rows):
+                    # 获取行中的所有单元格文本
+                    cells = [cell.text.strip() for cell in row.cells]
+                    
+                    # 检查是否至少有2个单元格
+                    if len(cells) >= 2:
+                        # 尝试从不同列组合中匹配IP和设备名称
+                        for i in range(len(cells) - 1):
+                            ip_candidate = cells[i]
+                            device_candidate = cells[i+1]
+                            
+                            # 检查第一个单元格是否是IP地址
+                            ip_pattern = r'^\d+\.\d+\.\d+\.\d+$'
+                            if re.match(ip_pattern, ip_candidate) and device_candidate:
+                                ip = ip_candidate
+                                device = device_candidate
+                                ip_device_map[ip] = device
+                                self.log(f"  匹配到: IP={ip}, 设备名称={device}")
+                                break
+            
+            self.log(f"\n读取完成，共找到 {len(ip_device_map)} 个IP设备映射")
+            return ip_device_map
+            
+        except Exception as e:
+            self.log(f"读取IP设备映射表失败: {str(e)}")
+            raise Exception(f"读取IP设备映射表失败: {str(e)}")
     
     def select_all_sheets(self):
         """全选所有工作表"""
@@ -357,6 +444,44 @@ class WPSExcelTool:
         except Exception as e:
             raise Exception(f"处理工作表{sheet_name}失败: {str(e)}")
     
+    def replace_ip_with_device(self, input_file, output_file, ip_device_map):
+        """替换Excel文件中的IP为设备名称"""
+        try:
+            self.log(f"开始替换IP为设备名称: {input_file}")
+            
+            # 打开输入文件
+            workbook = openpyxl.load_workbook(input_file)
+            sheet = workbook.active
+            
+            # 查找IP列（关联资产/域名列）
+            ip_column = 2  # 第3列，索引为2
+            
+            # 遍历所有行，从第2行开始（跳过表头）
+            replaced_count = 0
+            for row in range(2, sheet.max_row + 1):
+                cell_value = sheet.cell(row=row, column=ip_column + 1).value  # Excel列从1开始
+                if cell_value and isinstance(cell_value, str):
+                    # 检查是否是IP地址
+                    ip_pattern = r'^\d+\.\d+\.\d+\.\d+$'
+                    if re.match(ip_pattern, cell_value):
+                        # 查找映射表
+                        if cell_value in ip_device_map:
+                            device_name = ip_device_map[cell_value]
+                            sheet.cell(row=row, column=ip_column + 1).value = device_name
+                            replaced_count += 1
+                            self.log(f"  替换IP {cell_value} 为 {device_name}")
+            
+            # 保存输出文件
+            workbook.save(output_file)
+            workbook.close()
+            
+            self.log(f"IP替换完成！共替换 {replaced_count} 个IP地址")
+            self.log(f"替换结果保存至: {output_file}")
+            return output_file
+        except Exception as e:
+            self.log(f"替换IP失败: {str(e)}")
+            raise Exception(f"替换IP失败: {str(e)}")
+    
     def merge_and_save_results(self, file_path, sheet_names, results, output_path):
         """合并多个工作表的处理结果并保存"""
         try:
@@ -396,6 +521,7 @@ class WPSExcelTool:
     def process_file(self):
         file_path = self.file_path.get()
         output_path = self.output_path.get()
+        mapping_file_path = self.mapping_file_path.get()
         
         if not file_path:
             messagebox.showwarning("警告", "请选择Excel文件")
@@ -432,6 +558,21 @@ class WPSExcelTool:
             
             # 合并结果并保存
             output_file = self.merge_and_save_results(file_path, selected_sheets, results, output_path)
+            
+            # 检查是否需要替换IP为设备名称
+            if mapping_file_path:
+                # 读取IP设备映射表
+                ip_device_map = self.read_ip_device_mapping(mapping_file_path)
+                
+                if ip_device_map:
+                    # 生成替换后的输出文件名称
+                    replaced_output_file = os.path.join(output_path, f"替换IP后_{os.path.basename(output_file)}")
+                    # 执行IP替换
+                    replaced_output_file = self.replace_ip_with_device(output_file, replaced_output_file, ip_device_map)
+                    
+                    self.log(f"所有工作表处理完成！")
+                    messagebox.showinfo("成功", f"处理完成！\n合并结果保存至: {output_file}\n替换IP后结果保存至: {replaced_output_file}")
+                    return
             
             self.log(f"所有工作表处理完成！")
             messagebox.showinfo("成功", f"处理完成！合并结果保存至: {output_file}")
