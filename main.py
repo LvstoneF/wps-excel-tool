@@ -135,15 +135,24 @@ class WPSExcelTool:
             if sheet_name in ["漏洞详情", "Sheet1"]:
                 self.log(f"开始处理{sheet_name}工作表...")
                 
-                # 定义表头
-                headers = ["序号", "漏洞标题", "漏洞编号", "漏洞类型", "危险级别", "影响平台", "CVSS分值", 
-                          "bugtraq编号", "CVE编号", "CNCVE编号", "国家漏洞库编号", "CNNVD编号", 
-                          "CNVD编号", "漏洞可利用性", "存在主机", "简单描述", "详细描述", "修补建议", "参考网址", "漏洞安全性"]
+                # 定义result.xlsx格式的表头
+                headers = ["序号", "安全漏洞名称", "关联资产/域名", "严重程度"]
                 new_sheet.append(headers)
                 
                 # 设置列宽
-                for col in range(1, len(headers) + 1):
-                    new_sheet.column_dimensions[openpyxl.utils.get_column_letter(col)].width = 20
+                column_widths = [10, 50, 20, 10]
+                for i, width in enumerate(column_widths):
+                    new_sheet.column_dimensions[openpyxl.utils.get_column_letter(i+1)].width = width
+                
+                # 危险级别映射
+                severity_map = {
+                    "高危险": "高",
+                    "中危险": "中",
+                    "低危险": "低",
+                    "高危": "高",
+                    "中危": "中",
+                    "低危": "低"
+                }
                 
                 # 遍历原始工作表，提取漏洞信息
                 vulnerabilities = []
@@ -164,7 +173,7 @@ class WPSExcelTool:
                         # 开始新漏洞
                         current_vuln = {
                             "序号": title_cell.split("】")[0][1:],
-                            "漏洞标题": title_cell.split("】")[1].strip()
+                            "安全漏洞名称": title_cell.split("】")[1].strip()
                         }
                         vuln_index += 1
                     # 检查是否是属性行（B列或A列有属性名称）
@@ -173,58 +182,23 @@ class WPSExcelTool:
                         attr_name = row[1].strip()
                         attr_value = row[2].strip()
                         
-                        # 映射属性名称到表头
-                        attr_map = {
-                            "漏洞编号": "漏洞编号",
-                            "漏洞类型": "漏洞类型",
-                            "危险级别": "危险级别",
-                            "影响平台": "影响平台",
-                            "CVSS分值": "CVSS分值",
-                            "bugtraq编号": "bugtraq编号",
-                            "CVE编号": "CVE编号",
-                            "CNCVE编号": "CNCVE编号",
-                            "国家漏洞库编号": "国家漏洞库编号",
-                            "CNNVD编号": "CNNVD编号",
-                            "CNVD编号": "CNVD编号",
-                            "漏洞可利用性": "漏洞可利用性",
-                            "存在主机": "存在主机",
-                            "简单描述": "简单描述",
-                            "详细描述": "详细描述",
-                            "修补建议": "修补建议",
-                            "参考网址": "参考网址",
-                            "漏洞安全性": "漏洞安全性"
-                        }
-                        
-                        if attr_name in attr_map:
-                            current_vuln[attr_map[attr_name]] = attr_value
+                        # 只提取需要的属性
+                        if attr_name == "危险级别":
+                            # 映射危险级别到严重程度
+                            current_vuln["严重程度"] = severity_map.get(attr_value, attr_value)
+                        elif attr_name == "存在主机":
+                            current_vuln["关联资产/域名"] = attr_value
                     # 兼容旧格式：A列是属性名，B列是属性值
                     elif row[0] and isinstance(row[0], str) and len(row) > 1 and row[1]:
                         attr_name = row[0].strip()
                         attr_value = row[1].strip()
                         
-                        attr_map = {
-                            "漏洞编号": "漏洞编号",
-                            "漏洞类型": "漏洞类型",
-                            "危险级别": "危险级别",
-                            "影响平台": "影响平台",
-                            "CVSS分值": "CVSS分值",
-                            "bugtraq编号": "bugtraq编号",
-                            "CVE编号": "CVE编号",
-                            "CNCVE编号": "CNCVE编号",
-                            "国家漏洞库编号": "国家漏洞库编号",
-                            "CNNVD编号": "CNNVD编号",
-                            "CNVD编号": "CNVD编号",
-                            "漏洞可利用性": "漏洞可利用性",
-                            "存在主机": "存在主机",
-                            "简单描述": "简单描述",
-                            "详细描述": "详细描述",
-                            "修补建议": "修补建议",
-                            "参考网址": "参考网址",
-                            "漏洞安全性": "漏洞安全性"
-                        }
-                        
-                        if attr_name in attr_map:
-                            current_vuln[attr_map[attr_name]] = attr_value
+                        # 只提取需要的属性
+                        if attr_name == "危险级别":
+                            # 映射危险级别到严重程度
+                            current_vuln["严重程度"] = severity_map.get(attr_value, attr_value)
+                        elif attr_name == "存在主机":
+                            current_vuln["关联资产/域名"] = attr_value
                 
                 # 保存最后一个漏洞
                 if current_vuln:
@@ -233,10 +207,15 @@ class WPSExcelTool:
                 # 将提取的漏洞信息写入新工作表
                 for vuln in vulnerabilities:
                     # 按照表头顺序提取值
-                    row_data = [vuln.get(header, "") for header in headers]
+                    row_data = [
+                        vuln.get("序号", ""),
+                        vuln.get("安全漏洞名称", ""),
+                        vuln.get("关联资产/域名", ""),
+                        vuln.get("严重程度", "")
+                    ]
                     new_sheet.append(row_data)
                 
-                self.log(f"成功提取 {len(vulnerabilities)} 个漏洞信息")
+                self.log(f"成功生成 {len(vulnerabilities)} 条result.xlsx格式数据")
             else:
                 # 非漏洞详情工作表，执行默认处理（复制所有行）
                 for row in sheet.iter_rows(values_only=True):
