@@ -137,7 +137,7 @@ class WPSExcelTool:
     
     def browse_file(self):
         file_path = filedialog.askopenfilename(
-            filetypes=[("Excel Files", "*.xlsx;*.xls")]
+            filetypes=[("Excel Files", "*.xlsx;*.xls"), ("Word Files", "*.docx;*.doc")]
         )
         if file_path:
             self.file_path.set(file_path)
@@ -153,14 +153,14 @@ class WPSExcelTool:
     def browse_mapping_file(self):
         """选择IP设备映射表文件"""
         mapping_file = filedialog.askopenfilename(
-            filetypes=[("Word Files", "*.docx")]
+            filetypes=[("Word Files", "*.docx;*.doc")]
         )
         if mapping_file:
             self.mapping_file_path.set(mapping_file)
             self.log(f"选择IP设备映射表: {mapping_file}")
     
     def get_sheets(self, file_path):
-        """获取Excel文件的工作表列表，支持xlsx和xls格式"""
+        """获取文件的工作表列表，支持xlsx、xls、docx和doc格式"""
         ext = os.path.splitext(file_path)[1].lower()
         sheets = []
         
@@ -174,6 +174,9 @@ class WPSExcelTool:
                 # 使用xlrd处理xls文件
                 workbook = xlrd.open_workbook(file_path)
                 sheets = workbook.sheet_names()
+            elif ext in ['.docx', '.doc']:
+                # Word文件只有一个"工作表"（整个文档）
+                sheets = ["文档内容"]
             else:
                 raise Exception(f"不支持的文件格式: {ext}")
             
@@ -181,64 +184,135 @@ class WPSExcelTool:
         except Exception as e:
             raise Exception(f"读取工作表失败: {str(e)}")
     
-    def read_ip_device_mapping(self, docx_path):
-        """读取docx文件中的IP设备名称映射表，支持段落和表格格式"""
+    def read_ip_device_mapping(self, doc_path):
+        """读取Word文件中的IP设备名称映射表，支持docx和doc格式，支持段落和表格格式"""
         try:
-            self.log(f"开始读取IP设备映射表: {docx_path}")
+            self.log(f"开始读取IP设备映射表: {doc_path}")
             
-            # 打开docx文件
-            doc = Document(docx_path)
+            # 检查文件是否存在
+            if not os.path.exists(doc_path):
+                raise Exception(f"文件不存在: {doc_path}")
             
             # 初始化映射字典
             ip_device_map = {}
             
-            # 遍历所有段落
-            self.log("=== 遍历段落 ===")
-            for para in doc.paragraphs:
-                text = para.text.strip()
-                if text:
-                    # 尝试匹配IP和设备名称的格式
-                    patterns = [
-                        r'(\d+\.\d+\.\d+\.\d+)\s+(.*)',  # IP 设备名称
-                        r'(\d+\.\d+\.\d+\.\d+)-(.*)',   # IP-设备名称
-                        r'(\d+\.\d+\.\d+\.\d+):(.*)',   # IP:设备名称
-                        r'(\d+\.\d+\.\d+\.\d+)\s*->\s*(.*)'  # IP -> 设备名称
-                    ]
-                    
-                    for pattern in patterns:
-                        match = re.match(pattern, text)
-                        if match:
-                            ip = match.group(1)
-                            device = match.group(2).strip()
-                            ip_device_map[ip] = device
-                            self.log(f"  匹配到: IP={ip}, 设备名称={device}")
-                            break
+            # 获取文件扩展名
+            ext = os.path.splitext(doc_path)[1].lower()
             
-            # 遍历所有表格
-            self.log("\n=== 遍历表格 ===")
-            for table_idx, table in enumerate(doc.tables):
-                self.log(f"表格 {table_idx+1}，共 {len(table.rows)} 行，{len(table.columns)} 列")
-                
-                # 遍历表格的每一行
-                for row_idx, row in enumerate(table.rows):
-                    # 获取行中的所有单元格文本
-                    cells = [cell.text.strip() for cell in row.cells]
+            if ext == '.docx':
+                try:
+                    # 打开docx文件
+                    doc = Document(doc_path)
                     
-                    # 检查是否至少有2个单元格
-                    if len(cells) >= 2:
-                        # 尝试从不同列组合中匹配IP和设备名称
-                        for i in range(len(cells) - 1):
-                            ip_candidate = cells[i]
-                            device_candidate = cells[i+1]
+                    # 遍历所有段落
+                    self.log("=== 遍历段落 ===")
+                    for para in doc.paragraphs:
+                        text = para.text.strip()
+                        if text:
+                            # 尝试匹配IP和设备名称的格式
+                            patterns = [
+                                r'(\d+\.\d+\.\d+\.\d+)\s+(.*)',  # IP 设备名称
+                                r'(\d+\.\d+\.\d+\.\d+)-(.*)',   # IP-设备名称
+                                r'(\d+\.\d+\.\d+\.\d+):(.*)',   # IP:设备名称
+                                r'(\d+\.\d+\.\d+\.\d+)\s*->\s*(.*)'  # IP -> 设备名称
+                            ]
                             
-                            # 检查第一个单元格是否是IP地址
-                            ip_pattern = r'^\d+\.\d+\.\d+\.\d+$'
-                            if re.match(ip_pattern, ip_candidate) and device_candidate:
-                                ip = ip_candidate
-                                device = device_candidate
-                                ip_device_map[ip] = device
-                                self.log(f"  匹配到: IP={ip}, 设备名称={device}")
-                                break
+                            for pattern in patterns:
+                                match = re.match(pattern, text)
+                                if match:
+                                    ip = match.group(1)
+                                    device = match.group(2).strip()
+                                    ip_device_map[ip] = device
+                                    self.log(f"  匹配到: IP={ip}, 设备名称={device}")
+                                    break
+                    
+                    # 遍历所有表格
+                    self.log("\n=== 遍历表格 ===")
+                    for table_idx, table in enumerate(doc.tables):
+                        self.log(f"表格 {table_idx+1}，共 {len(table.rows)} 行，{len(table.columns)} 列")
+                        
+                        # 遍历表格的每一行
+                        for row_idx, row in enumerate(table.rows):
+                            # 获取行中的所有单元格文本
+                            cells = [cell.text.strip() for cell in row.cells]
+                            
+                            # 检查是否至少有2个单元格
+                            if len(cells) >= 2:
+                                # 首先检查从右到左：设备名称 -> IP（用户指定的列顺序）
+                                for i in range(1, len(cells)):
+                                    # 检查当前单元格是否是IP地址
+                                    ip_pattern = r'^\d+\.\d+\.\d+\.\d+$'
+                                    if re.match(ip_pattern, cells[i]):
+                                        # 当前单元格是IP地址，前一个单元格是设备名称
+                                        device_candidate = cells[i-1]
+                                        if device_candidate and device_candidate != cells[i]:
+                                            ip = cells[i]
+                                            device = device_candidate
+                                            ip_device_map[ip] = device
+                                            self.log(f"  匹配到: IP={ip}, 设备名称={device}")
+                                            break
+                                else:
+                                    # 如果从右到左没有匹配到，再尝试从左到右：IP -> 设备名称
+                                    for i in range(len(cells) - 1):
+                                        # 检查当前单元格是否是IP地址
+                                        ip_pattern = r'^\d+\.\d+\.\d+\.\d+$'
+                                        if re.match(ip_pattern, cells[i]):
+                                            # 当前单元格是IP地址，下一个单元格是设备名称
+                                            device_candidate = cells[i+1]
+                                            if device_candidate and device_candidate != cells[i]:
+                                                ip = cells[i]
+                                                device = device_candidate
+                                                ip_device_map[ip] = device
+                                                self.log(f"  匹配到: IP={ip}, 设备名称={device}")
+                                                break
+                except Exception as e:
+                    raise Exception(f"读取.docx文件失败: {str(e)}. 请检查文件是否损坏或格式不正确。")
+            
+            elif ext == '.doc':
+                # 使用win32com.client处理doc文件（Windows系统）
+                try:
+                    import win32com.client
+                    # 初始化Word应用程序
+                    word = win32com.client.Dispatch('Word.Application')
+                    word.Visible = False
+                    # 打开doc文件
+                    doc = word.Documents.Open(doc_path)
+                    # 读取文档内容
+                    text = doc.Content.Text
+                    # 关闭文档
+                    doc.Close()
+                    # 退出Word应用程序
+                    word.Quit()
+                    # 将文本按换行符分割成段落
+                    paragraphs = text.split('\n')
+                    
+                    # 遍历所有段落
+                    self.log("=== 遍历段落 ===")
+                    for para in paragraphs:
+                        text = para.strip()
+                        if text:
+                            # 尝试匹配IP和设备名称的格式
+                            patterns = [
+                                r'(\d+\.\d+\.\d+\.\d+)\s+(.*)',  # IP 设备名称
+                                r'(\d+\.\d+\.\d+\.\d+)-(.*)',   # IP-设备名称
+                                r'(\d+\.\d+\.\d+\.\d+):(.*)',   # IP:设备名称
+                                r'(\d+\.\d+\.\d+\.\d+)\s*->\s*(.*)'  # IP -> 设备名称
+                            ]
+                            
+                            for pattern in patterns:
+                                match = re.match(pattern, text)
+                                if match:
+                                    ip = match.group(1)
+                                    device = match.group(2).strip()
+                                    ip_device_map[ip] = device
+                                    self.log(f"  匹配到: IP={ip}, 设备名称={device}")
+                                    break
+                except ImportError:
+                    raise Exception("处理.doc文件需要安装pywin32库，请使用pip install pywin32命令安装")
+                except Exception as e:
+                    raise Exception(f"读取.doc文件失败: {str(e)}. 请检查文件是否损坏或格式不正确。")
+            else:
+                raise Exception(f"不支持的文件格式: {ext}. 请选择.docx或.doc格式的文件。")
             
             self.log(f"\n读取完成，共找到 {len(ip_device_map)} 个IP设备映射")
             return ip_device_map
@@ -307,73 +381,132 @@ class WPSExcelTool:
             self.log(str(e))
     
     def read_excel_rows(self, file_path, sheet_name):
-        """读取Excel文件的行数据，支持xlsx和xls格式"""
+        """读取文件的行数据，支持xlsx、xls、docx和doc格式"""
         ext = os.path.splitext(file_path)[1].lower()
         rows = []
         
         try:
+            # 检查文件是否存在
+            if not os.path.exists(file_path):
+                raise Exception(f"文件不存在: {file_path}")
+            
             if ext == '.xlsx':
-                # 使用openpyxl处理xlsx文件
-                workbook = openpyxl.load_workbook(file_path)
-                sheet = workbook[sheet_name]
-                for row in sheet.iter_rows(min_row=1, values_only=True):
-                    rows.append(row)
-                workbook.close()
+                try:
+                    # 使用openpyxl处理xlsx文件
+                    workbook = openpyxl.load_workbook(file_path)
+                    sheet = workbook[sheet_name]
+                    for row in sheet.iter_rows(min_row=1, values_only=True):
+                        rows.append(row)
+                    workbook.close()
+                except Exception as e:
+                    raise Exception(f"读取.xlsx文件失败: {str(e)}. 请检查文件是否损坏或格式不正确。")
             elif ext == '.xls':
-                # 使用xlrd处理xls文件
-                workbook = xlrd.open_workbook(file_path)
-                sheet = workbook.sheet_by_name(sheet_name)
-                for i in range(sheet.nrows):
-                    row = []
-                    for j in range(sheet.ncols):
-                        cell_value = sheet.cell_value(i, j)
-                        cell_type = sheet.cell_type(i, j)
-                        
-                        # 处理日期类型
-                        if cell_type == xlrd.XL_CELL_DATE:
-                            date_tuple = xldate_as_tuple(cell_value, workbook.datemode)
-                            cell_value = datetime.datetime(*date_tuple).strftime('%Y-%m-%d')
-                        # 处理数字类型，转换为字符串
-                        elif cell_type == xlrd.XL_CELL_NUMBER:
-                            # 如果是整数，转换为整数字符串，否则保留原格式
-                            if cell_value == int(cell_value):
-                                cell_value = str(int(cell_value))
-                            else:
-                                cell_value = str(cell_value)
-                        # 处理空值
-                        elif cell_type == xlrd.XL_CELL_EMPTY:
-                            cell_value = ""
-                        
-                        row.append(cell_value)
-                    rows.append(tuple(row))
+                try:
+                    # 使用xlrd处理xls文件
+                    workbook = xlrd.open_workbook(file_path)
+                    sheet = workbook.sheet_by_name(sheet_name)
+                    for i in range(sheet.nrows):
+                        row = []
+                        for j in range(sheet.ncols):
+                            cell_value = sheet.cell_value(i, j)
+                            cell_type = sheet.cell_type(i, j)
+                            
+                            # 处理日期类型
+                            if cell_type == xlrd.XL_CELL_DATE:
+                                date_tuple = xldate_as_tuple(cell_value, workbook.datemode)
+                                cell_value = datetime.datetime(*date_tuple).strftime('%Y-%m-%d')
+                            # 处理数字类型，转换为字符串
+                            elif cell_type == xlrd.XL_CELL_NUMBER:
+                                # 如果是整数，转换为整数字符串，否则保留原格式
+                                if cell_value == int(cell_value):
+                                    cell_value = str(int(cell_value))
+                                else:
+                                    cell_value = str(cell_value)
+                            # 处理空值
+                            elif cell_type == xlrd.XL_CELL_EMPTY:
+                                cell_value = ""
+                            
+                            row.append(cell_value)
+                        rows.append(tuple(row))
+                except Exception as e:
+                    raise Exception(f"读取.xls文件失败: {str(e)}. 请检查文件是否损坏或格式不正确。")
+            elif ext == '.docx':
+                try:
+                    # 使用python-docx处理docx文件
+                    doc = Document(file_path)
+                    # 读取文档内容，转换为类似Excel行的格式
+                    for para in doc.paragraphs:
+                        text = para.text.strip()
+                        if text:
+                            # 将每个段落作为一行，只有一列
+                            rows.append((text,))
+                    # 读取表格内容
+                    for table in doc.tables:
+                        for row in table.rows:
+                            cells = [cell.text.strip() for cell in row.cells]
+                            rows.append(tuple(cells))
+                except Exception as e:
+                    raise Exception(f"读取.docx文件失败: {str(e)}. 请检查文件是否损坏或格式不正确。")
+            elif ext == '.doc':
+                # 使用win32com.client处理doc文件（Windows系统）
+                try:
+                    import win32com.client
+                    # 初始化Word应用程序
+                    word = win32com.client.Dispatch('Word.Application')
+                    word.Visible = False
+                    # 打开doc文件
+                    doc = word.Documents.Open(file_path)
+                    # 读取文档内容
+                    text = doc.Content.Text
+                    # 关闭文档
+                    doc.Close()
+                    # 退出Word应用程序
+                    word.Quit()
+                    # 将文本按换行符分割成段落
+                    paragraphs = text.split('\n')
+                    for para in paragraphs:
+                        text = para.strip()
+                        if text:
+                            # 将每个段落作为一行，只有一列
+                            rows.append((text,))
+                except ImportError:
+                    raise Exception("处理.doc文件需要安装pywin32库，请使用pip install pywin32命令安装")
+                except Exception as e:
+                    raise Exception(f"读取.doc文件失败: {str(e)}. 请检查文件是否损坏或格式不正确。")
             else:
-                raise Exception(f"不支持的文件格式: {ext}")
+                raise Exception(f"不支持的文件格式: {ext}. 请选择.xlsx、.xls、.docx或.doc格式的文件。")
             
             return rows
         except Exception as e:
             raise Exception(f"读取文件失败: {str(e)}")
     
     def process_single_sheet(self, file_path, sheet_name):
-        """处理单个工作表，返回处理结果数据"""
+        """处理单个工作表或文档，返回处理结果数据，支持xlsx、xls、docx和doc格式"""
         try:
-            # 读取Excel行数据
+            # 读取文件行数据
             rows = self.read_excel_rows(file_path, sheet_name)
             
-            # 如果是漏洞相关工作表，进行特殊处理
-            if sheet_name in ["漏洞详情", "Sheet1"] or sheet_name.startswith("漏洞详细"):
-                # 危险级别映射
-                severity_map = {
-                    "高危险": "高",
-                    "中危险": "中",
-                    "低危险": "低",
-                    "高危": "高",
-                    "中危": "中",
-                    "低危": "低",
-                    "信息": "信息",
-                    "信息级": "信息"
-                }
-                
-                # 遍历原始工作表，提取漏洞信息
+            # 检查文件格式
+            ext = os.path.splitext(file_path)[1].lower()
+            
+            # 危险级别映射
+            severity_map = {
+                "高危险": "高",
+                "中危险": "中",
+                "低危险": "低",
+                "高危": "高",
+                "中危": "中",
+                "低危": "低",
+                "信息": "信息",
+                "信息级": "信息"
+            }
+            
+            # 检查是否需要特殊处理
+            is_vulnerability_sheet = (sheet_name in ["漏洞详情", "Sheet1"] or sheet_name.startswith("漏洞详细"))
+            is_docx_file = (ext == '.docx')
+            
+            if is_vulnerability_sheet or is_docx_file:
+                # 遍历原始数据，提取漏洞信息
                 vulnerabilities = []
                 current_vuln = {}
                 vuln_index = 0
@@ -383,7 +516,7 @@ class WPSExcelTool:
                     if not any(row):
                         continue
                     
-                    # 检查是否是新漏洞标题行（以【数字】开头，在B列或A列）
+                    # 检查是否是新漏洞标题行（以【数字】开头）
                     title_cell = row[1] if len(row) > 1 else row[0]
                     if title_cell and isinstance(title_cell, str) and title_cell.startswith("【") and "】" in title_cell:
                         # 如果有当前漏洞，先保存
@@ -418,6 +551,21 @@ class WPSExcelTool:
                             current_vuln["严重程度"] = severity_map.get(attr_value, attr_value)
                         elif attr_name == "存在主机":
                             current_vuln["关联资产/域名"] = attr_value
+                    # 兼容DOCX格式：单行属性（如"危险级别：高"）
+                    elif len(row) >= 1 and row[0] and isinstance(row[0], str):
+                        text = row[0].strip()
+                        # 检查是否是属性行
+                        if ":" in text:
+                            attr_name, attr_value = text.split(":", 1)
+                            attr_name = attr_name.strip()
+                            attr_value = attr_value.strip()
+                            
+                            # 只提取需要的属性
+                            if attr_name == "危险级别":
+                                # 映射危险级别到严重程度
+                                current_vuln["严重程度"] = severity_map.get(attr_value, attr_value)
+                            elif attr_name == "存在主机":
+                                current_vuln["关联资产/域名"] = attr_value
                 
                 # 保存最后一个漏洞
                 if current_vuln:
@@ -445,35 +593,106 @@ class WPSExcelTool:
             raise Exception(f"处理工作表{sheet_name}失败: {str(e)}")
     
     def replace_ip_with_device(self, input_file, output_file, ip_device_map):
-        """替换Excel文件中的IP为设备名称"""
+        """替换Excel文件中的IP为设备名称，支持.xlsx和.xls格式"""
         try:
             self.log(f"开始替换IP为设备名称: {input_file}")
             
-            # 打开输入文件
-            workbook = openpyxl.load_workbook(input_file)
-            sheet = workbook.active
+            # 获取文件扩展名
+            ext = os.path.splitext(input_file)[1].lower()
             
-            # 查找IP列（关联资产/域名列）
-            ip_column = 2  # 第3列，索引为2
-            
-            # 遍历所有行，从第2行开始（跳过表头）
-            replaced_count = 0
-            for row in range(2, sheet.max_row + 1):
-                cell_value = sheet.cell(row=row, column=ip_column + 1).value  # Excel列从1开始
-                if cell_value and isinstance(cell_value, str):
-                    # 检查是否是IP地址
-                    ip_pattern = r'^\d+\.\d+\.\d+\.\d+$'
-                    if re.match(ip_pattern, cell_value):
-                        # 查找映射表
-                        if cell_value in ip_device_map:
-                            device_name = ip_device_map[cell_value]
-                            sheet.cell(row=row, column=ip_column + 1).value = device_name
-                            replaced_count += 1
-                            self.log(f"  替换IP {cell_value} 为 {device_name}")
-            
-            # 保存输出文件
-            workbook.save(output_file)
-            workbook.close()
+            if ext == '.xlsx':
+                # 使用openpyxl处理.xlsx文件
+                workbook = openpyxl.load_workbook(input_file)
+                sheet = workbook.active
+                
+                # 查找IP列（关联资产/域名列）
+                ip_column = 2  # 第3列，索引为2
+                
+                # 遍历所有行，从第2行开始（跳过表头）
+                replaced_count = 0
+                for row in range(2, sheet.max_row + 1):
+                    cell_value = sheet.cell(row=row, column=ip_column + 1).value  # Excel列从1开始
+                    if cell_value and isinstance(cell_value, str):
+                        # 检查是否是IP地址
+                        ip_pattern = r'\d+\.\d+\.\d+\.\d+'
+                        # 查找所有IP地址
+                        ips = re.findall(ip_pattern, cell_value)
+                        if ips:
+                            # 替换每个IP地址
+                            modified_value = cell_value
+                            for ip in ips:
+                                if ip in ip_device_map:
+                                    device_name = ip_device_map[ip]
+                                    # 只在设备名称有效（非空且不是"/"）的情况下进行替换
+                                    if device_name and device_name != "/" and device_name != ip:
+                                        modified_value = modified_value.replace(ip, device_name)
+                                        replaced_count += 1
+                                        self.log(f"  替换IP {ip} 为 {device_name}")
+                                    else:
+                                        self.log(f"  跳过替换IP {ip}，设备名称无效: {device_name}")
+                            # 如果有修改，更新单元格值
+                            if modified_value != cell_value:
+                                sheet.cell(row=row, column=ip_column + 1).value = modified_value
+                
+                # 保存输出文件
+                workbook.save(output_file)
+                workbook.close()
+                
+            elif ext == '.xls':
+                # 使用xlrd读取.xls文件，然后使用openpyxl写入新的.xlsx文件
+                self.log(f"检测到.xls文件，正在转换处理: {input_file}")
+                
+                # 读取.xls文件
+                xlrd_workbook = xlrd.open_workbook(input_file)
+                xlrd_sheet = xlrd_workbook.sheet_by_index(0)
+                
+                # 创建新的.xlsx文件
+                openpyxl_workbook = openpyxl.Workbook()
+                openpyxl_sheet = openpyxl_workbook.active
+                
+                # 复制表头
+                header_row = xlrd_sheet.row_values(0)
+                openpyxl_sheet.append(header_row)
+                
+                # 遍历所有行，从第2行开始（跳过表头）
+                replaced_count = 0
+                for row_idx in range(1, xlrd_sheet.nrows):
+                    row_values = xlrd_sheet.row_values(row_idx)
+                    
+                    # 处理IP列（关联资产/域名列）
+                    ip_column = 2  # 第3列，索引为2
+                    if len(row_values) > ip_column:
+                        cell_value = row_values[ip_column]
+                        if cell_value and isinstance(cell_value, str):
+                            # 检查是否是IP地址
+                            ip_pattern = r'\d+\.\d+\.\d+\.\d+'
+                            # 查找所有IP地址
+                            ips = re.findall(ip_pattern, cell_value)
+                            if ips:
+                                # 替换每个IP地址
+                                modified_value = cell_value
+                                for ip in ips:
+                                    if ip in ip_device_map:
+                                        device_name = ip_device_map[ip]
+                                        # 只在设备名称有效（非空且不是"/"）的情况下进行替换
+                                        if device_name and device_name != "/" and device_name != ip:
+                                            modified_value = modified_value.replace(ip, device_name)
+                                            replaced_count += 1
+                                            self.log(f"  替换IP {ip} 为 {device_name}")
+                                        else:
+                                            self.log(f"  跳过替换IP {ip}，设备名称无效: {device_name}")
+                                # 如果有修改，更新单元格值
+                                row_values[ip_column] = modified_value
+                    
+                    # 将处理后的行添加到新工作表
+                    openpyxl_sheet.append(row_values)
+                
+                # 保存输出文件
+                openpyxl_workbook.save(output_file)
+                openpyxl_workbook.close()
+                
+            else:
+                raise Exception(f"不支持的文件格式: {ext}")
             
             self.log(f"IP替换完成！共替换 {replaced_count} 个IP地址")
             self.log(f"替换结果保存至: {output_file}")
@@ -508,8 +727,10 @@ class WPSExcelTool:
                     new_sheet.append(row)
                     total_rows += 1
             
-            # 保存新文件
-            output_file = os.path.join(output_path, f"合并处理结果_{os.path.basename(file_path)}")
+            # 保存新文件，确保使用.xlsx扩展名
+            base_name = os.path.basename(file_path)
+            name_without_ext = os.path.splitext(base_name)[0]
+            output_file = os.path.join(output_path, f"合并处理结果_{name_without_ext}.xlsx")
             new_workbook.save(output_file)
             
             self.log(f"合并完成！共处理{len(sheet_names)}个工作表，生成{total_rows}行数据")
