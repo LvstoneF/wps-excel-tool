@@ -10,7 +10,12 @@ class WPSExcelTool:
     def __init__(self, root):
         self.root = root
         self.root.title("WPS Excel 处理工具")
-        self.root.geometry("600x400")
+        
+        # 设置窗口为可调整大小
+        self.root.resizable(True, True)
+        
+        # 设置窗口最小大小
+        self.root.minsize(600, 400)
         
         # 初始化变量
         self.file_path = tk.StringVar()
@@ -19,6 +24,18 @@ class WPSExcelTool:
         
         # 创建界面
         self.create_widgets()
+        
+        # 设置窗口居中显示
+        self.center_window()
+        
+    def center_window(self):
+        """将窗口居中显示"""
+        self.root.update_idletasks()
+        width = self.root.winfo_width()
+        height = self.root.winfo_height()
+        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.root.winfo_screenheight() // 2) - (height // 2)
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
     
     def create_widgets(self):
         # 标题
@@ -27,15 +44,16 @@ class WPSExcelTool:
         
         # 文件选择
         file_frame = ttk.Frame(self.root)
-        file_frame.pack(pady=10, padx=20, fill=tk.X)
+        file_frame.pack(pady=5, padx=10, fill=tk.X)
         
-        ttk.Label(file_frame, text="选择Excel文件:").pack(side=tk.LEFT, padx=5)
-        ttk.Entry(file_frame, textvariable=self.file_path, width=40).pack(side=tk.LEFT, padx=5)
+        ttk.Label(file_frame, text="选择Excel文件:").pack(side=tk.LEFT, padx=5, anchor=tk.CENTER)
+        # 让输入框能够扩展
+        ttk.Entry(file_frame, textvariable=self.file_path).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         ttk.Button(file_frame, text="浏览", command=self.browse_file).pack(side=tk.LEFT, padx=5)
         
-        # 工作表选择 - 改为列表框，支持多选
+        # 工作表选择 - 支持多选
         sheet_frame = ttk.LabelFrame(self.root, text="选择工作表（可多选）")
-        sheet_frame.pack(pady=10, padx=20, fill=tk.BOTH, expand=True)
+        sheet_frame.pack(pady=5, padx=10, fill=tk.BOTH, expand=True)
         
         # 刷新按钮
         refresh_button = ttk.Button(sheet_frame, text="刷新工作表", command=self.refresh_sheets)
@@ -53,13 +71,12 @@ class WPSExcelTool:
         h_scrollbar = ttk.Scrollbar(listbox_frame, orient=tk.HORIZONTAL)
         h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
         
-        # 列表框，支持多选
+        # 列表框，支持多选，去掉固定宽度，让它自动适应
         self.sheet_listbox = tk.Listbox(
             listbox_frame,
             selectmode=tk.MULTIPLE,
             yscrollcommand=v_scrollbar.set,
             xscrollcommand=h_scrollbar.set,
-            width=80,
             height=8
         )
         self.sheet_listbox.pack(fill=tk.BOTH, expand=True)
@@ -78,10 +95,11 @@ class WPSExcelTool:
         
         # 输出路径
         output_frame = ttk.Frame(self.root)
-        output_frame.pack(pady=10, padx=20, fill=tk.X)
+        output_frame.pack(pady=5, padx=10, fill=tk.X)
         
-        ttk.Label(output_frame, text="输出路径:").pack(side=tk.LEFT, padx=5)
-        ttk.Entry(output_frame, textvariable=self.output_path, width=40).pack(side=tk.LEFT, padx=5)
+        ttk.Label(output_frame, text="输出路径:").pack(side=tk.LEFT, padx=5, anchor=tk.CENTER)
+        # 让输入框能够扩展
+        ttk.Entry(output_frame, textvariable=self.output_path).pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
         ttk.Button(output_frame, text="浏览", command=self.browse_output).pack(side=tk.LEFT, padx=5)
         
         # 处理按钮
@@ -93,10 +111,11 @@ class WPSExcelTool:
         
         # 日志区域
         log_frame = ttk.Frame(self.root)
-        log_frame.pack(pady=10, padx=20, fill=tk.BOTH, expand=True)
+        log_frame.pack(pady=5, padx=10, fill=tk.BOTH, expand=True)
         
         ttk.Label(log_frame, text="处理日志:").pack(anchor=tk.W, padx=5)
-        self.log_text = tk.Text(log_frame, height=10, width=70)
+        # 去掉固定的高度和宽度，让它自动适应
+        self.log_text = tk.Text(log_frame, wrap=tk.WORD)
         self.log_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
         # 滚动条
