@@ -131,9 +131,9 @@ class WPSExcelTool:
             new_sheet = new_workbook.active
             new_sheet.title = "漏洞详情处理结果"
             
-            # 如果是漏洞详情工作表，进行特殊处理
-            if sheet_name == "漏洞详情":
-                self.log("开始处理漏洞详情工作表...")
+            # 如果是漏洞相关工作表，进行特殊处理
+            if sheet_name in ["漏洞详情", "Sheet1"]:
+                self.log(f"开始处理{sheet_name}工作表...")
                 
                 # 定义表头
                 headers = ["序号", "漏洞标题", "漏洞编号", "漏洞类型", "危险级别", "影响平台", "CVSS分值", 
@@ -155,24 +155,53 @@ class WPSExcelTool:
                     if not any(row):
                         continue
                     
-                    # 检查是否是新漏洞标题行（以【数字】开头）
-                    if row[0] and isinstance(row[0], str) and row[0].startswith("【") and "】" in row[0]:
+                    # 检查是否是新漏洞标题行（以【数字】开头，在B列或A列）
+                    title_cell = row[1] if len(row) > 1 else row[0]
+                    if title_cell and isinstance(title_cell, str) and title_cell.startswith("【") and "】" in title_cell:
                         # 如果有当前漏洞，先保存
                         if current_vuln:
                             vulnerabilities.append(current_vuln)
                         # 开始新漏洞
                         current_vuln = {
-                            "序号": row[0].split("】")[0][1:],
-                            "漏洞标题": row[0].split("】")[1].strip()
+                            "序号": title_cell.split("】")[0][1:],
+                            "漏洞标题": title_cell.split("】")[1].strip()
                         }
                         vuln_index += 1
-                    # 检查是否是属性行（A列有属性名称）
-                    elif row[0] and isinstance(row[0], str) and row[1]:
-                        # 提取属性名称和值
+                    # 检查是否是属性行（B列或A列有属性名称）
+                    elif len(row) >= 3 and row[1] and isinstance(row[1], str) and row[2]:
+                        # 提取属性名称和值（B列是属性名，C列是属性值）
+                        attr_name = row[1].strip()
+                        attr_value = row[2].strip()
+                        
+                        # 映射属性名称到表头
+                        attr_map = {
+                            "漏洞编号": "漏洞编号",
+                            "漏洞类型": "漏洞类型",
+                            "危险级别": "危险级别",
+                            "影响平台": "影响平台",
+                            "CVSS分值": "CVSS分值",
+                            "bugtraq编号": "bugtraq编号",
+                            "CVE编号": "CVE编号",
+                            "CNCVE编号": "CNCVE编号",
+                            "国家漏洞库编号": "国家漏洞库编号",
+                            "CNNVD编号": "CNNVD编号",
+                            "CNVD编号": "CNVD编号",
+                            "漏洞可利用性": "漏洞可利用性",
+                            "存在主机": "存在主机",
+                            "简单描述": "简单描述",
+                            "详细描述": "详细描述",
+                            "修补建议": "修补建议",
+                            "参考网址": "参考网址",
+                            "漏洞安全性": "漏洞安全性"
+                        }
+                        
+                        if attr_name in attr_map:
+                            current_vuln[attr_map[attr_name]] = attr_value
+                    # 兼容旧格式：A列是属性名，B列是属性值
+                    elif row[0] and isinstance(row[0], str) and len(row) > 1 and row[1]:
                         attr_name = row[0].strip()
                         attr_value = row[1].strip()
                         
-                        # 映射属性名称到表头
                         attr_map = {
                             "漏洞编号": "漏洞编号",
                             "漏洞类型": "漏洞类型",
