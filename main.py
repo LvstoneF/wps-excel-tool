@@ -33,13 +33,48 @@ class WPSExcelTool:
         ttk.Entry(file_frame, textvariable=self.file_path, width=40).pack(side=tk.LEFT, padx=5)
         ttk.Button(file_frame, text="浏览", command=self.browse_file).pack(side=tk.LEFT, padx=5)
         
-        # 工作表选择
-        sheet_frame = ttk.Frame(self.root)
-        sheet_frame.pack(pady=10, padx=20, fill=tk.X)
+        # 工作表选择 - 改为列表框，支持多选
+        sheet_frame = ttk.LabelFrame(self.root, text="选择工作表（可多选）")
+        sheet_frame.pack(pady=10, padx=20, fill=tk.BOTH, expand=True)
         
-        ttk.Label(sheet_frame, text="工作表:").pack(side=tk.LEFT, padx=5)
-        ttk.Combobox(sheet_frame, textvariable=self.sheet_name, width=38).pack(side=tk.LEFT, padx=5)
-        ttk.Button(sheet_frame, text="刷新", command=self.refresh_sheets).pack(side=tk.LEFT, padx=5)
+        # 刷新按钮
+        refresh_button = ttk.Button(sheet_frame, text="刷新工作表", command=self.refresh_sheets)
+        refresh_button.pack(anchor=tk.NE, padx=5, pady=5)
+        
+        # 列表框和滚动条
+        listbox_frame = ttk.Frame(sheet_frame)
+        listbox_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        
+        # 垂直滚动条
+        v_scrollbar = ttk.Scrollbar(listbox_frame, orient=tk.VERTICAL)
+        v_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # 水平滚动条
+        h_scrollbar = ttk.Scrollbar(listbox_frame, orient=tk.HORIZONTAL)
+        h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
+        
+        # 列表框，支持多选
+        self.sheet_listbox = tk.Listbox(
+            listbox_frame,
+            selectmode=tk.MULTIPLE,
+            yscrollcommand=v_scrollbar.set,
+            xscrollcommand=h_scrollbar.set,
+            width=80,
+            height=8
+        )
+        self.sheet_listbox.pack(fill=tk.BOTH, expand=True)
+        
+        # 绑定滚动条
+        v_scrollbar.config(command=self.sheet_listbox.yview)
+        h_scrollbar.config(command=self.sheet_listbox.xview)
+        
+        # 全选和取消全选按钮
+        select_frame = ttk.Frame(sheet_frame)
+        select_frame.pack(fill=tk.X, padx=5, pady=5)
+        
+        ttk.Button(select_frame, text="全选", command=self.select_all_sheets).pack(side=tk.LEFT, padx=5)
+        ttk.Button(select_frame, text="取消全选", command=self.deselect_all_sheets).pack(side=tk.LEFT, padx=5)
+        ttk.Button(select_frame, text="选择漏洞相关工作表", command=self.select_vuln_sheets).pack(side=tk.LEFT, padx=5)
         
         # 输出路径
         output_frame = ttk.Frame(self.root)
@@ -106,7 +141,22 @@ class WPSExcelTool:
         except Exception as e:
             raise Exception(f"读取工作表失败: {str(e)}")
     
-    def refresh_sheets(self):
+    def select_all_sheets(self):
+        """全选所有工作表"""
+        self.sheet_listbox.select_set(0, tk.END)
+        self.log("已全选所有工作表")
+    
+    def deselect_all_sheets(self):
+        """取消全选所有工作表"""
+        self.sheet_listbox.selection_clear(0, tk.END)
+        self.log("已取消全选所有工作表")
+    
+    def select_vuln_sheets(self):
+        """选择所有漏洞相关工作表"""
+        # 清空当前选择
+        self.sheet_listbox.selection_clear(0, tk.END)
+        
+        # 获取所有工作表
         file_path = self.file_path.get()
         if not file_path:
             messagebox.showwarning("警告", "请先选择Excel文件")
@@ -115,12 +165,37 @@ class WPSExcelTool:
         try:
             sheets = self.get_sheets(file_path)
             
-            # 更新下拉框
-            combobox = self.root.nametowidget('.!frame2.!combobox')
-            combobox['values'] = sheets
-            if sheets:
-                self.sheet_name.set(sheets[0])
-            self.log(f"刷新工作表: {sheets}")
+            # 选择漏洞相关工作表
+            vuln_sheets = [sheet for sheet in sheets if sheet.startswith("漏洞详细") or sheet in ["漏洞详情", "Sheet1"]]
+            
+            # 在列表框中选择对应的项
+            for i, sheet in enumerate(sheets):
+                if sheet in vuln_sheets:
+                    self.sheet_listbox.select_set(i)
+            
+            self.log(f"已选择 {len(vuln_sheets)} 个漏洞相关工作表")
+        except Exception as e:
+            messagebox.showerror("错误", str(e))
+            self.log(str(e))
+    
+    def refresh_sheets(self):
+        """刷新工作表列表"""
+        file_path = self.file_path.get()
+        if not file_path:
+            messagebox.showwarning("警告", "请先选择Excel文件")
+            return
+        
+        try:
+            sheets = self.get_sheets(file_path)
+            
+            # 清空列表框
+            self.sheet_listbox.delete(0, tk.END)
+            
+            # 添加工作表到列表框
+            for sheet in sheets:
+                self.sheet_listbox.insert(tk.END, sheet)
+            
+            self.log(f"刷新工作表完成: {sheets}")
         except Exception as e:
             messagebox.showerror("错误", str(e))
             self.log(str(e))
@@ -172,47 +247,14 @@ class WPSExcelTool:
         except Exception as e:
             raise Exception(f"读取文件失败: {str(e)}")
     
-    def process_file(self):
-        file_path = self.file_path.get()
-        sheet_name = self.sheet_name.get()
-        output_path = self.output_path.get()
-        
-        if not file_path:
-            messagebox.showwarning("警告", "请选择Excel文件")
-            return
-        
-        if not sheet_name:
-            messagebox.showwarning("警告", "请选择工作表")
-            return
-        
-        if not output_path:
-            messagebox.showwarning("警告", "请选择输出路径")
-            return
-        
+    def process_single_sheet(self, file_path, sheet_name):
+        """处理单个工作表，返回处理结果数据"""
         try:
-            self.log("开始处理文件...")
-            
             # 读取Excel行数据
             rows = self.read_excel_rows(file_path, sheet_name)
             
-            # 创建新工作簿和工作表
-            new_workbook = openpyxl.Workbook()
-            new_sheet = new_workbook.active
-            new_sheet.title = "漏洞详情处理结果"
-            
             # 如果是漏洞相关工作表，进行特殊处理
-            if sheet_name in ["漏洞详情", "Sheet1"]:
-                self.log(f"开始处理{sheet_name}工作表...")
-                
-                # 定义result.xlsx格式的表头
-                headers = ["序号", "安全漏洞名称", "关联资产/域名", "严重程度"]
-                new_sheet.append(headers)
-                
-                # 设置列宽
-                column_widths = [10, 50, 20, 10]
-                for i, width in enumerate(column_widths):
-                    new_sheet.column_dimensions[openpyxl.utils.get_column_letter(i+1)].width = width
-                
+            if sheet_name in ["漏洞详情", "Sheet1"] or sheet_name.startswith("漏洞详细"):
                 # 危险级别映射
                 severity_map = {
                     "高危险": "高",
@@ -220,7 +262,9 @@ class WPSExcelTool:
                     "低危险": "低",
                     "高危": "高",
                     "中危": "中",
-                    "低危": "低"
+                    "低危": "低",
+                    "信息": "信息",
+                    "信息级": "信息"
                 }
                 
                 # 遍历原始工作表，提取漏洞信息
@@ -273,30 +317,105 @@ class WPSExcelTool:
                 if current_vuln:
                     vulnerabilities.append(current_vuln)
                 
-                # 将提取的漏洞信息写入新工作表
+                # 转换为列表格式，方便合并，过滤掉严重程度为"信息"的条目
+                result_data = []
                 for vuln in vulnerabilities:
-                    # 按照表头顺序提取值
-                    row_data = [
-                        vuln.get("序号", ""),
-                        vuln.get("安全漏洞名称", ""),
-                        vuln.get("关联资产/域名", ""),
-                        vuln.get("严重程度", "")
-                    ]
-                    new_sheet.append(row_data)
+                    severity = vuln.get("严重程度", "")
+                    # 只保留严重程度不是"信息"的条目
+                    if severity != "信息":
+                        row_data = [
+                            vuln.get("序号", ""),
+                            vuln.get("安全漏洞名称", ""),
+                            vuln.get("关联资产/域名", ""),
+                            severity
+                        ]
+                        result_data.append(row_data)
                 
-                self.log(f"成功生成 {len(vulnerabilities)} 条result.xlsx格式数据")
+                return result_data
             else:
-                # 非漏洞详情工作表，执行默认处理（复制所有行）
-                for row in rows:
+                # 非漏洞详情工作表，返回原始数据
+                return rows
+        except Exception as e:
+            raise Exception(f"处理工作表{sheet_name}失败: {str(e)}")
+    
+    def merge_and_save_results(self, file_path, sheet_names, results, output_path):
+        """合并多个工作表的处理结果并保存"""
+        try:
+            # 创建新工作簿和工作表
+            new_workbook = openpyxl.Workbook()
+            new_sheet = new_workbook.active
+            new_sheet.title = "合并漏洞详情处理结果"
+            
+            # 定义表头
+            headers = ["序号", "安全漏洞名称", "关联资产/域名", "严重程度"]
+            new_sheet.append(headers)
+            
+            # 设置列宽
+            column_widths = [10, 50, 20, 10]
+            for i, width in enumerate(column_widths):
+                new_sheet.column_dimensions[openpyxl.utils.get_column_letter(i+1)].width = width
+            
+            # 合并所有结果
+            total_rows = 0
+            for i, (sheet_name, result_data) in enumerate(zip(sheet_names, results)):
+                self.log(f"合并{sheet_name}的处理结果，共{len(result_data)}行")
+                # 写入数据（跳过表头，因为已经添加过了）
+                for row in result_data:
                     new_sheet.append(row)
-                self.log("执行默认复制处理")
+                    total_rows += 1
             
             # 保存新文件
-            output_file = os.path.join(output_path, f"处理结果_{os.path.basename(file_path)}")
+            output_file = os.path.join(output_path, f"合并处理结果_{os.path.basename(file_path)}")
             new_workbook.save(output_file)
             
-            self.log(f"处理完成！结果保存至: {output_file}")
-            messagebox.showinfo("成功", f"处理完成！结果保存至: {output_file}")
+            self.log(f"合并完成！共处理{len(sheet_names)}个工作表，生成{total_rows}行数据")
+            self.log(f"结果保存至: {output_file}")
+            return output_file
+        except Exception as e:
+            raise Exception(f"合并结果失败: {str(e)}")
+    
+    def process_file(self):
+        file_path = self.file_path.get()
+        output_path = self.output_path.get()
+        
+        if not file_path:
+            messagebox.showwarning("警告", "请选择Excel文件")
+            return
+        
+        if not output_path:
+            messagebox.showwarning("警告", "请选择输出路径")
+            return
+        
+        try:
+            self.log("开始处理文件...")
+            
+            # 获取所有工作表
+            all_sheets = self.get_sheets(file_path)
+            
+            # 获取用户选择的工作表索引
+            selected_indices = self.sheet_listbox.curselection()
+            
+            if not selected_indices:
+                messagebox.showwarning("警告", "请选择要处理的工作表")
+                return
+            
+            # 获取选择的工作表名称
+            selected_sheets = [all_sheets[i] for i in selected_indices]
+            self.log(f"已选择 {len(selected_sheets)} 个工作表: {selected_sheets}")
+            
+            # 处理每个选择的工作表
+            results = []
+            for sheet in selected_sheets:
+                self.log(f"开始处理{sheet}工作表...")
+                result = self.process_single_sheet(file_path, sheet)
+                results.append(result)
+                self.log(f"成功处理{sheet}，生成{len(result)}行数据")
+            
+            # 合并结果并保存
+            output_file = self.merge_and_save_results(file_path, selected_sheets, results, output_path)
+            
+            self.log(f"所有工作表处理完成！")
+            messagebox.showinfo("成功", f"处理完成！合并结果保存至: {output_file}")
         except Exception as e:
             messagebox.showerror("错误", f"处理失败: {str(e)}")
             self.log(f"处理失败: {str(e)}")
