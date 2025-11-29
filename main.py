@@ -126,14 +126,93 @@ class WPSExcelTool:
             workbook = openpyxl.load_workbook(file_path)
             sheet = workbook[sheet_name]
             
-            # 示例处理：读取数据并写入新文件
+            # 创建新工作簿和工作表
             new_workbook = openpyxl.Workbook()
             new_sheet = new_workbook.active
-            new_sheet.title = "处理结果"
+            new_sheet.title = "漏洞详情处理结果"
             
-            # 复制数据
-            for row in sheet.iter_rows(values_only=True):
-                new_sheet.append(row)
+            # 如果是漏洞详情工作表，进行特殊处理
+            if sheet_name == "漏洞详情":
+                self.log("开始处理漏洞详情工作表...")
+                
+                # 定义表头
+                headers = ["序号", "漏洞标题", "漏洞编号", "漏洞类型", "危险级别", "影响平台", "CVSS分值", 
+                          "bugtraq编号", "CVE编号", "CNCVE编号", "国家漏洞库编号", "CNNVD编号", 
+                          "CNVD编号", "漏洞可利用性", "存在主机", "简单描述", "详细描述", "修补建议", "参考网址", "漏洞安全性"]
+                new_sheet.append(headers)
+                
+                # 设置列宽
+                for col in range(1, len(headers) + 1):
+                    new_sheet.column_dimensions[openpyxl.utils.get_column_letter(col)].width = 20
+                
+                # 遍历原始工作表，提取漏洞信息
+                vulnerabilities = []
+                current_vuln = {}
+                vuln_index = 0
+                
+                for row in sheet.iter_rows(min_row=1, values_only=True):
+                    # 跳过空行
+                    if not any(row):
+                        continue
+                    
+                    # 检查是否是新漏洞标题行（以【数字】开头）
+                    if row[0] and isinstance(row[0], str) and row[0].startswith("【") and "】" in row[0]:
+                        # 如果有当前漏洞，先保存
+                        if current_vuln:
+                            vulnerabilities.append(current_vuln)
+                        # 开始新漏洞
+                        current_vuln = {
+                            "序号": row[0].split("】")[0][1:],
+                            "漏洞标题": row[0].split("】")[1].strip()
+                        }
+                        vuln_index += 1
+                    # 检查是否是属性行（A列有属性名称）
+                    elif row[0] and isinstance(row[0], str) and row[1]:
+                        # 提取属性名称和值
+                        attr_name = row[0].strip()
+                        attr_value = row[1].strip()
+                        
+                        # 映射属性名称到表头
+                        attr_map = {
+                            "漏洞编号": "漏洞编号",
+                            "漏洞类型": "漏洞类型",
+                            "危险级别": "危险级别",
+                            "影响平台": "影响平台",
+                            "CVSS分值": "CVSS分值",
+                            "bugtraq编号": "bugtraq编号",
+                            "CVE编号": "CVE编号",
+                            "CNCVE编号": "CNCVE编号",
+                            "国家漏洞库编号": "国家漏洞库编号",
+                            "CNNVD编号": "CNNVD编号",
+                            "CNVD编号": "CNVD编号",
+                            "漏洞可利用性": "漏洞可利用性",
+                            "存在主机": "存在主机",
+                            "简单描述": "简单描述",
+                            "详细描述": "详细描述",
+                            "修补建议": "修补建议",
+                            "参考网址": "参考网址",
+                            "漏洞安全性": "漏洞安全性"
+                        }
+                        
+                        if attr_name in attr_map:
+                            current_vuln[attr_map[attr_name]] = attr_value
+                
+                # 保存最后一个漏洞
+                if current_vuln:
+                    vulnerabilities.append(current_vuln)
+                
+                # 将提取的漏洞信息写入新工作表
+                for vuln in vulnerabilities:
+                    # 按照表头顺序提取值
+                    row_data = [vuln.get(header, "") for header in headers]
+                    new_sheet.append(row_data)
+                
+                self.log(f"成功提取 {len(vulnerabilities)} 个漏洞信息")
+            else:
+                # 非漏洞详情工作表，执行默认处理（复制所有行）
+                for row in sheet.iter_rows(values_only=True):
+                    new_sheet.append(row)
+                self.log("执行默认复制处理")
             
             # 保存新文件
             output_file = os.path.join(output_path, f"处理结果_{os.path.basename(file_path)}")
