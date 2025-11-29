@@ -2,6 +2,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import openpyxl
 import os
+import xlrd
+from xlrd import xldate_as_tuple
+import datetime
 
 class WPSExcelTool:
     def __init__(self, root):
@@ -81,6 +84,28 @@ class WPSExcelTool:
             self.output_path.set(output_path)
             self.log(f"选择输出路径: {output_path}")
     
+    def get_sheets(self, file_path):
+        """获取Excel文件的工作表列表，支持xlsx和xls格式"""
+        ext = os.path.splitext(file_path)[1].lower()
+        sheets = []
+        
+        try:
+            if ext == '.xlsx':
+                # 使用openpyxl处理xlsx文件
+                workbook = openpyxl.load_workbook(file_path)
+                sheets = workbook.sheetnames
+                workbook.close()
+            elif ext == '.xls':
+                # 使用xlrd处理xls文件
+                workbook = xlrd.open_workbook(file_path)
+                sheets = workbook.sheet_names()
+            else:
+                raise Exception(f"不支持的文件格式: {ext}")
+            
+            return sheets
+        except Exception as e:
+            raise Exception(f"读取工作表失败: {str(e)}")
+    
     def refresh_sheets(self):
         file_path = self.file_path.get()
         if not file_path:
@@ -88,9 +113,7 @@ class WPSExcelTool:
             return
         
         try:
-            workbook = openpyxl.load_workbook(file_path)
-            sheets = workbook.sheetnames
-            workbook.close()
+            sheets = self.get_sheets(file_path)
             
             # 更新下拉框
             combobox = self.root.nametowidget('.!frame2.!combobox')
@@ -99,8 +122,55 @@ class WPSExcelTool:
                 self.sheet_name.set(sheets[0])
             self.log(f"刷新工作表: {sheets}")
         except Exception as e:
-            messagebox.showerror("错误", f"读取工作表失败: {str(e)}")
-            self.log(f"读取工作表失败: {str(e)}")
+            messagebox.showerror("错误", str(e))
+            self.log(str(e))
+    
+    def read_excel_rows(self, file_path, sheet_name):
+        """读取Excel文件的行数据，支持xlsx和xls格式"""
+        ext = os.path.splitext(file_path)[1].lower()
+        rows = []
+        
+        try:
+            if ext == '.xlsx':
+                # 使用openpyxl处理xlsx文件
+                workbook = openpyxl.load_workbook(file_path)
+                sheet = workbook[sheet_name]
+                for row in sheet.iter_rows(min_row=1, values_only=True):
+                    rows.append(row)
+                workbook.close()
+            elif ext == '.xls':
+                # 使用xlrd处理xls文件
+                workbook = xlrd.open_workbook(file_path)
+                sheet = workbook.sheet_by_name(sheet_name)
+                for i in range(sheet.nrows):
+                    row = []
+                    for j in range(sheet.ncols):
+                        cell_value = sheet.cell_value(i, j)
+                        cell_type = sheet.cell_type(i, j)
+                        
+                        # 处理日期类型
+                        if cell_type == xlrd.XL_CELL_DATE:
+                            date_tuple = xldate_as_tuple(cell_value, workbook.datemode)
+                            cell_value = datetime.datetime(*date_tuple).strftime('%Y-%m-%d')
+                        # 处理数字类型，转换为字符串
+                        elif cell_type == xlrd.XL_CELL_NUMBER:
+                            # 如果是整数，转换为整数字符串，否则保留原格式
+                            if cell_value == int(cell_value):
+                                cell_value = str(int(cell_value))
+                            else:
+                                cell_value = str(cell_value)
+                        # 处理空值
+                        elif cell_type == xlrd.XL_CELL_EMPTY:
+                            cell_value = ""
+                        
+                        row.append(cell_value)
+                    rows.append(tuple(row))
+            else:
+                raise Exception(f"不支持的文件格式: {ext}")
+            
+            return rows
+        except Exception as e:
+            raise Exception(f"读取文件失败: {str(e)}")
     
     def process_file(self):
         file_path = self.file_path.get()
@@ -122,9 +192,8 @@ class WPSExcelTool:
         try:
             self.log("开始处理文件...")
             
-            # 打开工作簿
-            workbook = openpyxl.load_workbook(file_path)
-            sheet = workbook[sheet_name]
+            # 读取Excel行数据
+            rows = self.read_excel_rows(file_path, sheet_name)
             
             # 创建新工作簿和工作表
             new_workbook = openpyxl.Workbook()
@@ -159,7 +228,7 @@ class WPSExcelTool:
                 current_vuln = {}
                 vuln_index = 0
                 
-                for row in sheet.iter_rows(min_row=1, values_only=True):
+                for row in rows:
                     # 跳过空行
                     if not any(row):
                         continue
@@ -218,16 +287,13 @@ class WPSExcelTool:
                 self.log(f"成功生成 {len(vulnerabilities)} 条result.xlsx格式数据")
             else:
                 # 非漏洞详情工作表，执行默认处理（复制所有行）
-                for row in sheet.iter_rows(values_only=True):
+                for row in rows:
                     new_sheet.append(row)
                 self.log("执行默认复制处理")
             
             # 保存新文件
             output_file = os.path.join(output_path, f"处理结果_{os.path.basename(file_path)}")
             new_workbook.save(output_file)
-            
-            workbook.close()
-            new_workbook.close()
             
             self.log(f"处理完成！结果保存至: {output_file}")
             messagebox.showinfo("成功", f"处理完成！结果保存至: {output_file}")
