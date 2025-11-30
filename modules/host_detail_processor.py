@@ -22,29 +22,46 @@ class HostDetailProcessor:
         if self.logger:
             self.logger(message)
     
-    def process_host_detail_sheet(self, file_path, sheet_name):
-        """处理主机详情子表，返回处理结果数据
+    def process_host_detail_sheet(self, file_path):
+        """处理主机详情子表，获取主机信息
         
         Args:
             file_path (str): 文件路径
-            sheet_name (str): 工作表名称
         
         Returns:
-            list: 处理结果数据
+            list: 主机信息列表
         
         Raises:
             Exception: 处理工作表失败时抛出异常
         """
         try:
+            # 获取所有工作表
+            sheets = FileReader.get_sheets(file_path)
+            
+            # 查找主机详情子表
+            host_sheet = None
+            for sheet in sheets:
+                if any(keyword in sheet for keyword in HOST_DETAIL_SHEET_KEYWORDS):
+                    host_sheet = sheet
+                    break
+            
+            if not host_sheet:
+                self.log("未找到主机详情子表")
+                return []
+            
+            self.log(f"开始处理主机详情子表: {host_sheet}")
+            
             # 读取主机详情子表数据
-            rows = FileReader.read_file_rows(file_path, sheet_name)
+            rows = FileReader.read_file_rows(file_path, host_sheet)
             
             # 提取主机信息
             hosts = self._extract_hosts_from_rows(rows)
             
+            self.log(f"成功提取 {len(hosts)} 台主机信息")
             return hosts
         except Exception as e:
-            raise Exception(f"处理工作表{sheet_name}失败: {str(e)}")
+            self.log(f"处理主机详情子表失败: {str(e)}")
+            return []
     
     def _extract_hosts_from_rows(self, rows):
         """从行数据中提取主机信息
