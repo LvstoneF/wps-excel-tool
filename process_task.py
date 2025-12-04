@@ -19,14 +19,24 @@ from constants import VULN_SHEET_KEYWORDS, VULN_SHEET_PREFIX
 
 def main():
     """主函数"""
-    # 源文件路径
-    source_file = r"C:\Users\Administrator\Desktop\11111\定制_xls\EXCEL\report_定制_20251117132848.xls"
+    # 源文件路径 - 建议通过命令行参数或配置文件传入
+    source_file = ""
     
-    # 映射文件路径
-    mapping_file = r"C:\Users\Administrator\Desktop\11111\62.docx"
+    # 映射文件路径 - 建议通过命令行参数或配置文件传入
+    mapping_file = ""
     
-    # 输出目录路径
-    output_dir = r"C:\Users\Administrator\Desktop\tmp"
+    # 输出目录路径 - 建议通过命令行参数或配置文件传入
+    output_dir = ""
+    
+    # 示例使用方式：通过命令行参数获取
+    if len(sys.argv) < 4:
+        print("Usage: python process_task.py <source_file> <mapping_file> <output_dir>")
+        print("示例：python process_task.py report.xlsx mapping.docx output_dir")
+        sys.exit(1)
+    
+    source_file = sys.argv[1]
+    mapping_file = sys.argv[2]
+    output_dir = sys.argv[3]
     
     # 检查文件是否存在
     if not os.path.exists(source_file):

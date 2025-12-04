@@ -28,6 +28,9 @@ from modules.ip_device_mapper import IPDeviceMapper
 from modules.ip_replacer import IPReplacer
 from modules.report_generator import ReportGenerator
 from modules.host_detail_processor import HostDetailProcessor
+from modules.shengbang_processor import ShengBangProcessor
+from modules.green_ally_processor import GreenAllyProcessor
+from modules.green_ally_gui import GreenAllyGUI
 
 class WPSExcelTool:
     """WPS Excel 处理工具主类，负责整个应用的GUI和业务逻辑协调"""
@@ -52,6 +55,8 @@ class WPSExcelTool:
         self.ip_replacer = IPReplacer(logger=self.log)
         self.report_generator = ReportGenerator(logger=self.log)
         self.host_detail_processor = HostDetailProcessor(logger=self.log)
+        self.shengbang_processor = ShengBangProcessor(logger=self.log)
+        self.green_ally_processor = GreenAllyProcessor(logger=self.log)
         
         # 创建界面
         self.create_widgets()
@@ -147,6 +152,8 @@ class WPSExcelTool:
         button_frame.pack(pady=20)
         
         ttk.Button(button_frame, text="处理文档", command=self.process_file).pack(side=tk.LEFT, padx=10)
+        ttk.Button(button_frame, text="处理绿盟漏扫文件", command=self.open_green_ally_gui).pack(side=tk.LEFT, padx=10)
+        ttk.Button(button_frame, text="批量处理绿盟漏扫报告", command=self.batch_process_green_ally_reports).pack(side=tk.LEFT, padx=10)
         ttk.Button(button_frame, text="退出", command=self.root.quit).pack(side=tk.LEFT, padx=10)
         
         # 日志区域
@@ -257,6 +264,21 @@ class WPSExcelTool:
     def process_single_sheet(self, file_path, sheet_name):
         """处理单个工作表或文档，返回处理结果数据，支持xlsx、xls、docx和doc格式"""
         try:
+            # 检查是否是盛邦漏洞扫描报告
+            is_shengbang_report = self.shengbang_processor.is_shengbang_report(file_path)
+            
+            if is_shengbang_report:
+                # 使用盛邦漏洞扫描报告处理器处理
+                return self.shengbang_processor.process_report(file_path, sheet_name)
+            
+            # 检查是否是绿盟漏扫报告
+            is_green_ally_report = self.green_ally_processor.is_green_ally_report(file_path)
+            
+            if is_green_ally_report:
+                # 使用绿盟漏扫报告处理器处理
+                return self.green_ally_processor.process_green_ally_report(file_path)
+            
+            # 使用现有逻辑处理
             # 读取文件行数据
             rows = FileReader.read_file_rows(file_path, sheet_name)
             
@@ -374,9 +396,65 @@ class WPSExcelTool:
             messagebox.showerror("错误", f"处理失败: {str(e)}")
             self.log(f"处理失败: {str(e)}")
     
+    def batch_process_green_ally_reports(self):
+        """批量处理绿盟漏扫报告"""
+        # 选择文件夹
+        folder_path = filedialog.askdirectory()
+        if not folder_path:
+            self.log("未选择文件夹")
+            return
+        
+        # 选择输出路径
+        output_path = filedialog.askdirectory()
+        if not output_path:
+            self.log("未选择输出路径")
+            return
+        
+        try:
+            self.log(f"开始批量处理绿盟漏扫报告，文件夹: {folder_path}")
+            
+            # 调用绿盟漏扫报告处理器的批量处理方法
+            result = self.green_ally_processor.batch_process_folder(
+                folder_path,
+                output_path,
+                self.mapping_file_path.get() if self.mapping_file_path.get() else None
+            )
+            
+            # 显示处理结果
+            self.log(f"批量处理完成")
+            self.log(f"成功处理: {len(result['success'])} 个文件")
+            for file in result['success']:
+                self.log(f"  成功: {file}")
+            
+            if result['failed']:
+                self.log(f"处理失败: {len(result['failed'])} 个文件")
+                for item in result['failed']:
+                    self.log(f"  失败: {item['file']} - {item['reason']}")
+            
+            messagebox.showinfo("成功", f"批量处理完成\n成功: {len(result['success'])} 个文件\n失败: {len(result['failed'])} 个文件")
+        except Exception as e:
+            self.log(f"批量处理失败: {str(e)}")
+            messagebox.showerror("错误", f"批量处理失败: {str(e)}")
+    
     def log(self, message):
         self.log_text.insert(tk.END, f"{message}\n")
         self.log_text.see(tk.END)
+    
+    def open_green_ally_gui(self):
+        """打开绿盟漏扫文件处理GUI"""
+        try:
+            # 创建一个新窗口来显示绿盟漏扫GUI
+            green_ally_window = tk.Toplevel(self.root)
+            green_ally_window.title("绿盟漏扫文件处理")
+            green_ally_window.geometry("800x600")
+            
+            # 初始化绿盟漏扫GUI
+            self.green_ally_gui = GreenAllyGUI(green_ally_window, self.green_ally_processor, self.log)
+            
+            self.log("打开绿盟漏扫文件处理GUI成功")
+        except Exception as e:
+            self.log(f"打开绿盟漏扫文件处理GUI失败: {str(e)}")
+            messagebox.showerror("错误", f"打开绿盟漏扫文件处理GUI失败: {str(e)}")
 
 if __name__ == "__main__":
     root = tk.Tk()

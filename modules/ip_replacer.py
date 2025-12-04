@@ -24,13 +24,14 @@ class IPReplacer:
         if self.logger:
             self.logger(message)
     
-    def replace_ip_with_device(self, input_file, output_file, ip_device_map):
+    def replace_ip_with_device(self, input_file, output_file, ip_device_map, ip_column_index=None):
         """替换Excel文件中的IP为设备名称，支持.xlsx和.xls格式
         
         Args:
             input_file (str): 输入文件路径
             output_file (str): 输出文件路径
             ip_device_map (dict): IP设备映射字典
+            ip_column_index (int, optional): IP地址所在的列索引（从0开始），默认使用常量中的IP_COLUMN_INDEX
         
         Returns:
             str: 输出文件路径
@@ -40,6 +41,9 @@ class IPReplacer:
         """
         try:
             self.log(f"开始替换IP为设备名称: {input_file}")
+            
+            # 使用指定的列索引或默认值
+            column_index = ip_column_index if ip_column_index is not None else IP_COLUMN_INDEX
             
             # 获取文件扩展名
             ext = os.path.splitext(input_file)[1].lower()
@@ -52,7 +56,8 @@ class IPReplacer:
                 # 遍历所有行，从第2行开始（跳过表头）
                 replaced_count = 0
                 for row in range(2, sheet.max_row + 1):
-                    cell_value = sheet.cell(row=row, column=IP_COLUMN_INDEX + 1).value  # Excel列从1开始
+                    # 获取单元格值，Excel列从1开始
+                    cell_value = sheet.cell(row=row, column=column_index + 1).value
                     if cell_value and isinstance(cell_value, str):
                         # 查找所有IP地址
                         ips = re.findall(IP_PATTERN, cell_value)
@@ -71,7 +76,7 @@ class IPReplacer:
                                         self.log(f"  跳过替换IP {ip}，设备名称无效: {device_name}")
                             # 如果有修改，更新单元格值
                             if modified_value != cell_value:
-                                sheet.cell(row=row, column=IP_COLUMN_INDEX + 1).value = modified_value
+                                sheet.cell(row=row, column=column_index + 1).value = modified_value
                 
                 # 保存输出文件
                 workbook.save(output_file)
@@ -98,9 +103,9 @@ class IPReplacer:
                 for row_idx in range(1, xlrd_sheet.nrows):
                     row_values = xlrd_sheet.row_values(row_idx)
                     
-                    # 处理IP列（关联资产/域名列）
-                    if len(row_values) > IP_COLUMN_INDEX:
-                        cell_value = row_values[IP_COLUMN_INDEX]
+                    # 处理IP列
+                    if len(row_values) > column_index:
+                        cell_value = row_values[column_index]
                         if cell_value and isinstance(cell_value, str):
                             # 查找所有IP地址
                             ips = re.findall(IP_PATTERN, cell_value)
@@ -119,7 +124,7 @@ class IPReplacer:
                                             self.log(f"  跳过替换IP {ip}，设备名称无效: {device_name}")
                                 # 如果有修改，更新单元格值
                                 if modified_value != cell_value:
-                                    row_values[IP_COLUMN_INDEX] = modified_value
+                                    row_values[column_index] = modified_value
                     
                     # 将处理后的行添加到新工作表
                     openpyxl_sheet.append(row_values)
